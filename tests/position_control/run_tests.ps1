@@ -1,3 +1,9 @@
+# CUSTOM PROJECT TEST RUNNER - NOT PART OF THE ORIGINAL NXP FIRMWARE
+#
+# Builds and runs the isolated relative position-controller tests with a native
+# C compiler. It also checks the custom encoder/application integration contracts
+# without modifying NXP-generated build files.
+
 $ErrorActionPreference = 'Stop'
 
 $testRoot = Split-Path -Parent $MyInvocation.MyCommand.Path

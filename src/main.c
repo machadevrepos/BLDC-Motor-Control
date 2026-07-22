@@ -58,7 +58,21 @@ extern "C" {
 #include <meas_s32m.h>
 #include "motor_structure.h"
 #include "pospe_sensor.h"
+/*==================================================================================================
+ * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+ *
+ * Purpose:
+ * Imports the project-specific relative mechanical position controller. The module is an outer loop
+ * that produces a bounded speed request; it does not replace or modify the NXP FOC implementation.
+ *
+ * Ownership:
+ * Custom project code. This section is not part of the original NXP firmware.
+ *==================================================================================================*/
 #include "position_control.h"
+/*==================================================================================================
+ * CUSTOM POSITION CONTROL INTEGRATION - END
+ * NXP ORIGINAL CODE RESUMES BELOW
+ *==================================================================================================*/
 #include "state_machine.h"
 #include "config\PMSM_appconfig.h"
 #include "Peripherals\peripherals_config.h"
@@ -115,6 +129,21 @@ extern "C" {
 ******************************************************************************/
 #define ENCODER   1
 
+/*==================================================================================================
+ * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+ *
+ * Purpose:
+ * Defines the timing/default policy and the FreeMASTER-facing data contracts used only by the
+ * relative position outer loop. Active tuning is applied atomically from the staged structure;
+ * command sequence counters prevent partially written settings from becoming active.
+ *
+ * Units:
+ * Position is in encoder quadrature counts or mechanical degrees. Internal speed is mechanical
+ * rad/s and the final request passed to the existing NXP speed loop is electrical rad/s.
+ *
+ * Ownership:
+ * Custom project code. This section is not part of the original NXP firmware.
+ *==================================================================================================*/
 #define POSITION_ENCODER_SAMPLE_SEC       (0.0001F)
 #define POSITION_LOOP_SAMPLE_SEC          (0.001F)
 #define POSITION_DEFAULT_SPEED_FRACTION   (0.01F)
@@ -173,6 +202,10 @@ typedef struct
     bool accelerationLimited;
     bool applyAccepted;
 } PositionControlStatus;
+/*==================================================================================================
+ * CUSTOM POSITION CONTROL INTEGRATION - END
+ * NXP ORIGINAL CODE RESUMES BELOW
+ *==================================================================================================*/
 
 
 /*==================================================================================================
@@ -200,6 +233,21 @@ tBool             fieldWeakOnOff; /* Enable/Disable Field Weakening */
 switchSensor_t    switchSensor;   /* Position sensor selector */
 encoderPospe_t    encoderPospe;   /* Encoder position and speed*/
 
+/*==================================================================================================
+ * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+ *
+ * Purpose:
+ * Owns the relative position-controller instance, FreeMASTER command/status symbols, encoder sample
+ * validity, and speed-reference arbitration state. Only the three g_position* structures are
+ * intended for FreeMASTER discovery; the controller and sequence history remain private.
+ *
+ * Safety:
+ * Position ownership starts false after reset. A pending-release flag guarantees that a stale
+ * position-generated speed reference is replaced by zero when ownership is relinquished.
+ *
+ * Ownership:
+ * Custom project code. This section is not part of the original NXP firmware.
+ *==================================================================================================*/
 /* FreeMASTER writes staging and command structures; status is firmware-owned. */
 volatile PositionControlCommandStaged g_positionCommandStaged;
 volatile PositionControlCommand       g_positionCommand;
@@ -214,6 +262,10 @@ static uint32_t s_positionLastEnableSequence;
 static uint32_t s_positionLastDisableSequence;
 static uint32_t s_positionLastSetSoftwareZeroSequence;
 static uint32_t s_positionLastSetTargetSequence;
+/*==================================================================================================
+ * CUSTOM POSITION CONTROL INTEGRATION - END
+ * NXP ORIGINAL CODE RESUMES BELOW
+ *==================================================================================================*/
 
 
 
@@ -254,12 +306,27 @@ tBool FaultDetection(void);
 tBool FocSlowLoop(void);
 void  MCAT_Init(void);
 void CurrentTrigOutput(void);
+/*==================================================================================================
+ * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+ *
+ * Purpose:
+ * Declares the application-layer adapter functions that connect the hardware-independent position
+ * module to NXP state, encoder feedback, FreeMASTER commands, and the existing speed reference.
+ * The position module itself never accesses these application globals directly.
+ *
+ * Ownership:
+ * Custom project code. This section is not part of the original NXP firmware.
+ *==================================================================================================*/
 static void PositionControl_ApplicationInit(void);
 static bool PositionControl_IsPermitted(void);
 static void PositionControl_ProcessSlowLoop(void);
 static void PositionControl_ReleaseOwnership(void);
 static void PositionControl_MirrorStatus(const PositionControlOutput *output,
                                          bool controlPermitted);
+/*==================================================================================================
+ * CUSTOM POSITION CONTROL INTEGRATION - END
+ * NXP ORIGINAL CODE RESUMES BELOW
+ *==================================================================================================*/
 
 /*==================================================================================================
 *                                    FUNCTIONS DEFINITION
@@ -443,8 +510,22 @@ int main(void)
     ***********************************************************************************************/
     /* MCAT variables initialization */
     MCAT_Init();
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+     *
+     * Purpose:
+     * Initializes the default-disabled position controller only after the authoritative NXP/MCAT
+     * motor-control parameters are loaded. This does not modify the tuned current or speed loops.
+     *
+     * Ownership:
+     * Custom project code. This section is not part of the original NXP firmware.
+     *==================================================================================================*/
     /* Default-disabled relative position outer-loop initialization. */
     PositionControl_ApplicationInit();
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - END
+     * NXP ORIGINAL CODE RESUMES BELOW
+     *==================================================================================================*/
     /* Clear measured variables      */
     MEAS_Clear(&meas);
 
@@ -644,10 +725,25 @@ void Bctu_FIFO1_WatermarkNotification(void)
     #if ENCODER
     /* Get rotor position and speed from Encoder sensor */
     POSPE_GetPospeElEnc(&encoderPospe);
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+     *
+     * Purpose:
+     * Passes the already corrected wrapped mechanical count into the isolated multi-turn unwrapper
+     * at the existing fast encoder-update rate. No position PI calculation or hardware access is
+     * performed by this call; it only validates and accumulates encoder movement.
+     *
+     * Ownership:
+     * Custom project code. This section is not part of the original NXP firmware.
+     *==================================================================================================*/
     s_positionEncoderSampleValid = PositionControl_UpdateEncoder(
         &s_positionControl,
         encoderPospe.correctedWrappedMechanicalCount,
         (encoderPospe.correctedWrappedMechanicalCount < (4U * ENC_PULSES)));
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - END
+     * NXP ORIGINAL CODE RESUMES BELOW
+     *==================================================================================================*/
     #endif
     /* Fault detection routine, must be executed prior application state machine */
     getFcnStatus &= FaultDetection();
@@ -656,10 +752,25 @@ void Bctu_FIFO1_WatermarkNotification(void)
 
     /* Execute State table with newly measured data */
     StateTable[cntrState.event][cntrState.state]();
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+     *
+     * Purpose:
+     * Immediately removes position-loop ownership whenever the NXP application state, FOC mode,
+     * sensor choice, or encoder position source no longer permits position control. This leaves the
+     * original NXP state machine and fault transitions unchanged.
+     *
+     * Ownership:
+     * Custom project code. This section is not part of the original NXP firmware.
+     *==================================================================================================*/
     if (!PositionControl_IsPermitted())
     {
         PositionControl_ReleaseOwnership();
     }
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - END
+     * NXP ORIGINAL CODE RESUMES BELOW
+     *==================================================================================================*/
     Siul2_Dio_Ip_ClearPins(TST_GPIO_D16_PORT, (1 << TST_GPIO_D16_PIN));
     FMSTR_Recorder(0);
 }
@@ -862,6 +973,27 @@ void MCAT_Init(void)
     }
 }
 
+/*==================================================================================================
+ * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+ *
+ * Purpose:
+ * Implements the application-side adapter between the hardware-independent position controller and
+ * the NXP firmware. This block snapshots staged FreeMASTER data, derives permission from the existing
+ * run/mode/sensor state, performs command sequencing, mirrors diagnostics, and arbitrates the sole
+ * write of the position-generated electrical-speed request into the existing speed-loop input.
+ *
+ * Safety and ownership rules:
+ * - Position mode remains disabled until an explicit enable sequence is received.
+ * - Enable captures the current multi-turn position and cannot move the shaft by itself.
+ * - Disable or permission loss commands one deterministic zero-speed boundary before release.
+ * - The original NXP speed-reference path is not written while position ownership is inactive.
+ * - Staged tuning is validated and activated as one snapshot at the 1 kHz slow-loop boundary.
+ *
+ * Ownership:
+ * Custom project code. This entire helper block is not part of the original NXP firmware.
+ *==================================================================================================*/
+/* Copies every volatile FreeMASTER staging field into one nonvolatile local snapshot. Command
+ * sequence values are checked before and after this copy by the caller to reject torn updates. */
 static PositionControlCommandStaged PositionControl_CopyStagedCommand(void)
 {
     PositionControlCommandStaged snapshot;
@@ -898,6 +1030,8 @@ static PositionControlCommandStaged PositionControl_CopyStagedCommand(void)
     return snapshot;
 }
 
+/* Builds immutable configuration from the latest firmware constants, applies conservative P/PI
+ * defaults, clears all command histories, and leaves position ownership disabled after reset. */
 static void PositionControl_ApplicationInit(void)
 {
     PositionControlConfig config;
@@ -955,6 +1089,8 @@ static void PositionControl_ApplicationInit(void)
                                  false);
 }
 
+/* Central application permission policy. Position output may own the speed reference only while the
+ * original NXP application is running in encoder-based speed control with encoder1 position feedback. */
 static bool PositionControl_IsPermitted(void)
 {
     return (cntrState.state == run) &&
@@ -963,6 +1099,8 @@ static bool PositionControl_IsPermitted(void)
            (pos_mode == encoder1);
 }
 
+/* Disables the isolated controller and, if it owned the speed reference, places zero into the normal
+ * speed-loop input and records that the zero boundary must be consumed before ownership is released. */
 static void PositionControl_ReleaseOwnership(void)
 {
     PositionControl_Disable(&s_positionControl);
@@ -974,6 +1112,8 @@ static void PositionControl_ReleaseOwnership(void)
     s_positionOwnershipActive = false;
 }
 
+/* Copies the controller's read-only output into stable global RAM fields for FreeMASTER Variable
+ * Watch and Recorder. FreeMASTER must not write g_positionStatus. */
 static void PositionControl_MirrorStatus(const PositionControlOutput *output,
                                          bool controlPermitted)
 {
@@ -1015,6 +1155,9 @@ static void PositionControl_MirrorStatus(const PositionControlOutput *output,
     g_positionStatus.accelerationLimited = output->accelerationLimited;
 }
 
+/* Runs at the existing 1 kHz speed-loop boundary. It processes command sequence counters in safe
+ * priority order, validates stable tuning/target snapshots, runs the outer loop, and writes the
+ * electrical-speed result only while valid position ownership is active. */
 static void PositionControl_ProcessSlowLoop(void)
 {
     PositionControlCommandStaged staged;
@@ -1126,6 +1269,10 @@ static void PositionControl_ProcessSlowLoop(void)
 
     PositionControl_MirrorStatus(&positionOutput, controlPermitted);
 }
+/*==================================================================================================
+ * CUSTOM POSITION CONTROL INTEGRATION - END
+ * NXP ORIGINAL CODE RESUMES BELOW
+ *==================================================================================================*/
 
 /*FUNCTION**********************************************************************
  *
@@ -1231,9 +1378,24 @@ void StateInit(void)
      * Reset state of Speed control variables
      * ----------------------------------*/
     drvFOC.pospeControl.speedLoopCntr        = 0;
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+     *
+     * Purpose:
+     * Relinquishes any position-generated speed request and resets relative multi-turn runtime state
+     * whenever the NXP application re-enters initialization. Active validated tuning is retained by
+     * PositionControl_Reset(), but position ownership and encoder initialization are cleared.
+     *
+     * Ownership:
+     * Custom project code. This section is not part of the original NXP firmware.
+     *==================================================================================================*/
     PositionControl_ReleaseOwnership();
     PositionControl_Reset(&s_positionControl);
     s_positionEncoderSampleValid            = false;
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - END
+     * NXP ORIGINAL CODE RESUMES BELOW
+     *==================================================================================================*/
 
     /*------------------------------------
      * Reset state of Align control variables
@@ -1472,8 +1634,23 @@ void StateAlign(void)
         /* position range <-pi,pi> is <0,4*ENC_PULSES>  */
         encoderPospe.counterCwOffset  = Emios_Icu_Ip_GetEdgeNumbers(0U, 6U) + (2*ENC_PULSES);
         encoderPospe.counterCcwOffset = Emios_Icu_Ip_GetEdgeNumbers(0U, 7U);
+        /*==================================================================================================
+         * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+         *
+         * Purpose:
+         * Starts a new relative-position coordinate after the original NXP alignment code captures
+         * fresh encoder offsets. The next corrected count becomes the unwrapping baseline, preventing
+         * an alignment offset change from appearing as false multi-turn motion.
+         *
+         * Ownership:
+         * Custom project code. This section is not part of the original NXP firmware.
+         *==================================================================================================*/
         PositionControl_Reset(&s_positionControl);
         s_positionEncoderSampleValid = false;
+        /*==================================================================================================
+         * CUSTOM POSITION CONTROL INTEGRATION - END
+         * NXP ORIGINAL CODE RESUMES BELOW
+         *==================================================================================================*/
         #endif
         if (!AlignStatus)
         {
@@ -1632,7 +1809,22 @@ void StateRun(void)
     {
         drvFOC.pospeControl.speedLoopCntr = 0;
 
+        /*==================================================================================================
+         * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+         *
+         * Purpose:
+         * Executes command processing and the relative position outer loop at the existing 1 kHz NXP
+         * speed-loop boundary. When valid ownership is active, it places a bounded electrical-rad/s
+         * request into the normal speed-loop input immediately before FocSlowLoop() executes.
+         *
+         * Ownership:
+         * Custom project code. This section is not part of the original NXP firmware.
+         *==================================================================================================*/
         PositionControl_ProcessSlowLoop();
+        /*==================================================================================================
+         * CUSTOM POSITION CONTROL INTEGRATION - END
+         * NXP ORIGINAL CODE RESUMES BELOW
+         *==================================================================================================*/
         stateRunStatus = FocSlowLoop();
 
         if (!stateRunStatus)

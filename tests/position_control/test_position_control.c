@@ -1,3 +1,11 @@
+/******************************************************************************
+ * CUSTOM PROJECT TEST - NOT PART OF THE ORIGINAL NXP FIRMWARE
+ *
+ * Host/target-independent behavioral tests for the custom relative multi-turn
+ * position controller. These tests do not exercise NXP hardware drivers or claim
+ * motor-bench validation.
+ ******************************************************************************/
+
 #include "position_control.h"
 
 #include <math.h>

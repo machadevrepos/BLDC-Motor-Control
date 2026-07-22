@@ -53,7 +53,21 @@ tBool POSPE_GetPospeElEnc(encoderPospe_t *ptr)
     counterCW   = (uint16_t)((Emios_Icu_Ip_GetEdgeNumbers(0U, 6U))- ptr->counterCwOffset);     /* CW  counter */
     counterCCW  = (uint16_t)((Emios_Icu_Ip_GetEdgeNumbers(0U, 7U))- ptr->counterCcwOffset);    /* CCW counter */
     Absolut_position = (tFloat)(((uint16_t)(counterCW-counterCCW))&(uint16_t)(4*ENC_PULSES-1));
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+     *
+     * Purpose:
+     * Copies the existing NXP corrected wrapped-count result into the public encoder output field.
+     * No hardware count, direction, alignment, observer-error, speed, or angle calculation is changed.
+     *
+     * Ownership:
+     * Custom project code. This assignment is not part of the original NXP firmware.
+     *==================================================================================================*/
     ptr->correctedWrappedMechanicalCount = (uint16_t)Absolut_position;
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - END
+     * NXP ORIGINAL CODE RESUMES BELOW
+     *==================================================================================================*/
     /* Mechanical rotor position acquired from EMIOS0 - in fix point <-1,1) */
     f32ThRotMe_EMI = MLIB_ConvertPU_F32FLT(MLIB_Sub(MLIB_Div(Absolut_position, (2*ENC_PULSES)),1.0));
 
@@ -111,7 +125,21 @@ tBool POSPE_ClearPospeElEnc(encoderPospe_t *ptr)
     ptr->thRotEl.filt   = 0.0F;
     ptr->wRotEl.raw     = 0.0F;
     ptr->wRotEl.filt    = 0.0F;
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+     *
+     * Purpose:
+     * Clears the application-facing wrapped-count copy with the rest of the encoder outputs so the
+     * position controller cannot observe a stale pre-alignment or pre-reset sample.
+     *
+     * Ownership:
+     * Custom project code. This reset assignment is not part of the original NXP firmware.
+     *==================================================================================================*/
     ptr->correctedWrappedMechanicalCount = 0U;
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - END
+     * NXP ORIGINAL CODE RESUMES BELOW
+     *==================================================================================================*/
 
     AMCLIB_TrackObsrvInit(&(ptr->TrackObsrv));
 

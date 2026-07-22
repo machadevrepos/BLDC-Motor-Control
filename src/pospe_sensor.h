@@ -60,7 +60,25 @@ typedef struct
     tFloat                              fltMotorPP;
     uint16_t                            counterCwOffset;
     uint16_t                            counterCcwOffset;
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - BEGIN
+     *
+     * Purpose:
+     * Exposes a read-only application-facing copy of the corrected wrapped mechanical encoder count
+     * already calculated by the original NXP encoder routine. The position controller consumes this
+     * value through its API and therefore does not read eMIOS hardware or private encoder globals.
+     *
+     * This field does not alter NXP electrical-angle generation, tracking-observer state, speed
+     * estimation, counter direction handling, or alignment-offset processing.
+     *
+     * Ownership:
+     * Custom project code. This field is not part of the original NXP firmware.
+     *==================================================================================================*/
     uint16_t                            correctedWrappedMechanicalCount;
+    /*==================================================================================================
+     * CUSTOM POSITION CONTROL INTEGRATION - END
+     * NXP ORIGINAL CODE RESUMES BELOW
+     *==================================================================================================*/
 }encoderPospe_t;
 
 /*==================================================================================================

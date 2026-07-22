@@ -1,3 +1,12 @@
+/******************************************************************************
+ * CUSTOM PROJECT MODULE - NOT PART OF THE ORIGINAL NXP FIRMWARE
+ *
+ * Implements the hardware-independent relative multi-turn position outer loop.
+ * This entire file was added for the project-specific position-control feature.
+ * It consumes corrected encoder feedback and returns a bounded speed request;
+ * it never reads hardware or writes current, voltage, PWM, or NXP FOC globals.
+ ******************************************************************************/
+
 #include "position_control.h"
 
 #include <float.h>
@@ -9,6 +18,8 @@
 #define POSITION_CONTROL_TWO_PI (6.28318530717958647692F)
 #define POSITION_CONTROL_DEGREES_PER_REV (360.0F)
 
+/* Small numeric helpers used throughout validation and limiting. Keeping these
+ * operations local makes the controller independent of AMMCLIB and target HALs. */
 static bool PositionControl_IsFinite(float value)
 {
     return isfinite(value) != 0;
@@ -41,6 +52,8 @@ static float PositionControl_ClampFloat(float value, float lower, float upper)
     return value;
 }
 
+/* Subtracts signed multi-turn values without allowing undefined int64 overflow.
+ * Saturation is diagnostic-safe and prevents corrupted counts from wrapping. */
 static int64_t PositionControl_SubtractCounts(int64_t left, int64_t right)
 {
     if ((right > 0) && (left < (INT64_MIN + right)))
@@ -54,12 +67,15 @@ static int64_t PositionControl_SubtractCounts(int64_t left, int64_t right)
     return left - right;
 }
 
+/* Converts the raw accumulated count into the current software-zero coordinate. */
 static int64_t PositionControl_GetRelativeCounts(const PositionControlState *state)
 {
     return PositionControl_SubtractCounts(state->accumulatedPositionCounts,
                                           state->softwareZeroOffsetCounts);
 }
 
+/* Converts relative quadrature counts to mechanical degrees for diagnostics.
+ * Controller calculations remain count-based to avoid unnecessary conversions. */
 static float PositionControl_CountsToDegrees(const PositionControlState *state,
                                              int64_t counts)
 {
@@ -79,6 +95,8 @@ static float PositionControl_CountsToDegrees(const PositionControlState *state,
     return (float)degrees;
 }
 
+/* Refreshes the externally visible position/status fields from internal state.
+ * This helper never changes controller ownership or motion state. */
 static void PositionControl_UpdatePositionOutput(PositionControlState *state)
 {
     int64_t positionCounts = PositionControl_GetRelativeCounts(state);
@@ -98,6 +116,8 @@ static void PositionControl_UpdatePositionOutput(PositionControlState *state)
     state->output.diagnosticFlags = state->encoderDiagnosticFlags;
 }
 
+/* Produces the defined safe motion state used by reset, disable, permission loss,
+ * and invalid input: zero request, zero integrator, and cleared limiter/dwell state. */
 static void PositionControl_ClearMotionState(PositionControlState *state)
 {
     state->integratorMechanicalRadPerSec = 0.0F;
@@ -112,6 +132,9 @@ static void PositionControl_ClearMotionState(PositionControlState *state)
     state->output.integratorMechanicalRadPerSec = 0.0F;
 }
 
+/* Validates immutable configuration and derives the maximum physically plausible
+ * count movement per encoder sample from safe speed, sample time, and resolution.
+ * The ceiling is always kept below half a revolution so wrap direction is unique. */
 static bool PositionControl_ValidateConfig(const PositionControlConfig *config,
                                            uint32_t *maxEncoderDeltaCounts)
 {
@@ -166,6 +189,8 @@ static bool PositionControl_ValidateConfig(const PositionControlConfig *config,
     return true;
 }
 
+/* Validates a complete tuning snapshot before activation and converts dwell time
+ * into deterministic position-loop ticks. No active field is changed on rejection. */
 static PositionControlTuningResult PositionControl_ValidateTuning(
     const PositionControlState *state,
     const PositionControlTuning *tuning,
@@ -221,6 +246,8 @@ static PositionControlTuningResult PositionControl_ValidateTuning(
     return POSITION_CONTROL_TUNING_ACCEPTED;
 }
 
+/* Initializes one controller instance from authoritative application configuration.
+ * The instance starts disabled, without tuning ownership or encoder history. */
 bool PositionControl_Init(PositionControlState *state,
                           const PositionControlConfig *config)
 {
@@ -245,6 +272,9 @@ bool PositionControl_Init(PositionControlState *state,
     return true;
 }
 
+/* Clears all runtime position, encoder, integrator, limiter, dwell, and ownership
+ * state while preserving validated configuration and active tuning. The next valid
+ * encoder sample becomes a baseline and therefore cannot create a false turn. */
 void PositionControl_Reset(PositionControlState *state)
 {
     PositionControlConfig config;
@@ -282,6 +312,13 @@ void PositionControl_Reset(PositionControlState *state)
         tuning.maxDecelMechanicalRadPerSec2;
 }
 
+/* Validates and unwraps one corrected mechanical encoder sample.
+ *
+ * The first valid sample initializes the wrapped baseline. Later samples are
+ * corrected across the revolution boundary, direction-adjusted, checked against
+ * exact half-turn ambiguity and the physical delta ceiling, then accumulated into
+ * a signed 64-bit multi-turn count. Invalid samples clear encoder initialization
+ * and invalidate output without modifying the original NXP fault system. */
 bool PositionControl_UpdateEncoder(PositionControlState *state,
                                    uint16_t wrappedCount,
                                    bool encoderValid)
@@ -372,6 +409,10 @@ bool PositionControl_UpdateEncoder(PositionControlState *state,
     return true;
 }
 
+/* Requests bumpless position ownership. Enable succeeds only with valid config,
+ * active tuning, initialized encoder feedback, and application permission. On
+ * success the current relative position is captured as target, all motion state is
+ * cleared, and targetArmed remains false until a later explicit target command. */
 bool PositionControl_Enable(PositionControlState *state,
                             bool controlPermitted)
 {
@@ -404,6 +445,9 @@ bool PositionControl_Enable(PositionControlState *state,
     return true;
 }
 
+/* Relinquishes position ownership and returns a zero/invalid speed output. Encoder
+ * position is retained for diagnostics, but target arming, PI, dwell, and trajectory
+ * state are cleared so no stale request can survive a later re-enable. */
 void PositionControl_Disable(PositionControlState *state)
 {
     if (state == NULL)
@@ -419,6 +463,9 @@ void PositionControl_Disable(PositionControlState *state)
     PositionControl_UpdatePositionOutput(state);
 }
 
+/* Atomically validates and activates a complete tuning snapshot. A rejected
+ * snapshot updates the result code only; the previous active tuning remains intact.
+ * Applying tuning while enabled preserves whether motion was explicitly armed. */
 bool PositionControl_ApplyTuning(PositionControlState *state,
                                  const PositionControlTuning *tuning)
 {
@@ -458,6 +505,8 @@ bool PositionControl_ApplyTuning(PositionControlState *state,
     return true;
 }
 
+/* Arms a target expressed in relative quadrature counts. Enabled software limits
+ * clamp the target before it becomes active and expose targetClamped for diagnostics. */
 bool PositionControl_SetTargetCounts(PositionControlState *state,
                                      int64_t targetCounts)
 {
@@ -488,6 +537,9 @@ bool PositionControl_SetTargetCounts(PositionControlState *state,
     return true;
 }
 
+/* Converts a finite mechanical-degree command to the nearest relative encoder count,
+ * rejects values outside int64 range, and delegates arming/soft-limit behavior to
+ * PositionControl_SetTargetCounts(). */
 bool PositionControl_SetTargetDegrees(PositionControlState *state,
                                       float targetDegrees)
 {
@@ -512,6 +564,9 @@ bool PositionControl_SetTargetDegrees(PositionControlState *state,
     return PositionControl_SetTargetCounts(state, roundedCounts);
 }
 
+/* Defines the present accumulated mechanical count as relative zero. If a target is
+ * active it is shifted by the same coordinate change, preserving position error and
+ * preventing software-zero from creating an unintended movement command. */
 void PositionControl_SetSoftwareZero(PositionControlState *state)
 {
     int64_t previousPosition;
@@ -529,6 +584,9 @@ void PositionControl_SetSoftwareZero(PositionControlState *state)
     PositionControl_UpdatePositionOutput(state);
 }
 
+/* Applies independent acceleration/deceleration limits at the configured position
+ * sample time. Increasing speed magnitude uses acceleration; slowing or reversing
+ * uses the deceleration limit. The previous limited output is the trajectory state. */
 static float PositionControl_ApplyRateLimit(const PositionControlState *state,
                                             float requested,
                                             bool *limited)
@@ -559,6 +617,18 @@ static float PositionControl_ApplyRateLimit(const PositionControlState *state,
     return requested;
 }
 
+/* Executes one position-loop update, intended for the existing 1 kHz slow boundary.
+ *
+ * Data flow:
+ *   target - relative position -> P/optional PI -> speed clamp -> rate limit
+ *   -> mechanical rad/s -> pole-pair conversion -> electrical rad/s output.
+ *
+ * The integrator is cleared in the target deadband and is not advanced while output
+ * saturation acts in the same direction as error. atTarget requires both position
+ * tolerance and stopped-speed qualification for the configured dwell duration.
+ * Invalid numeric data, encoder feedback, or application permission disables the
+ * controller and returns a zero/invalid output; it never bypasses the tuned NXP
+ * speed/current loops or their existing limits. */
 PositionControlOutput PositionControl_Run(PositionControlState *state,
                                           const PositionControlInput *input)
 {
@@ -723,6 +793,7 @@ PositionControlOutput PositionControl_Run(PositionControlState *state,
     return state->output;
 }
 
+/* Returns a read-only pointer to the most recent output/status snapshot. */
 const PositionControlOutput *PositionControl_GetOutput(
     const PositionControlState *state)
 {

@@ -1,8 +1,15 @@
 /******************************************************************************
+ * CUSTOM PROJECT MODULE - NOT PART OF THE ORIGINAL NXP FIRMWARE
+ *
  * Relative multi-turn mechanical position outer-loop controller.
  *
  * This module is hardware independent. It produces a bounded speed request for
  * the existing speed loop and never accesses motor-control application globals.
+ * The complete contents of this file were added for this project's relative
+ * position-control feature.
+ *
+ * Position is relative to the most recent initialization/alignment or software
+ * zero. This interface does not provide absolute homing or retained position.
  ******************************************************************************/
 
 #ifndef POSITION_CONTROL_H
@@ -11,6 +18,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* Tuning-application result reported to the application and FreeMASTER status.
+ * A rejected candidate never partially replaces the active tuning structure. */
 typedef enum
 {
     POSITION_CONTROL_TUNING_NOT_APPLIED = 0,
@@ -21,6 +30,8 @@ typedef enum
     POSITION_CONTROL_TUNING_REJECTED_SOFT_LIMIT
 } PositionControlTuningResult;
 
+/* Diagnostic bit field. Encoder and numeric diagnostics invalidate the output;
+ * application permission is still owned and decided by the integration layer. */
 enum
 {
     POSITION_CONTROL_DIAG_NONE = 0U,
@@ -32,6 +43,8 @@ enum
     POSITION_CONTROL_DIAG_NUMERIC = (1UL << 5)
 };
 
+/* Immutable controller configuration copied from authoritative firmware values
+ * during initialization. Speeds are mechanical rad/s and periods are seconds. */
 typedef struct
 {
     uint16_t countsPerMechanicalRev;
@@ -42,6 +55,9 @@ typedef struct
     float safeMaxMechanicalRadPerSec;
 } PositionControlConfig;
 
+/* Atomically applied runtime tuning. Position is expressed in quadrature counts,
+ * speed in mechanical rad/s, and acceleration/deceleration in mechanical rad/s^2.
+ * Kp has units rad/s/count; Ki has units rad/s/(count*second). */
 typedef struct
 {
     float kpMechanicalRadPerSecPerCount;
@@ -59,6 +75,8 @@ typedef struct
     int64_t positiveSoftLimitCounts;
 } PositionControlTuning;
 
+/* Runtime feedback and permission supplied by the application at the existing
+ * speed-loop boundary. The isolated module does not inspect NXP globals itself. */
 typedef struct
 {
     float measuredMechanicalRadPerSec;
@@ -66,6 +84,9 @@ typedef struct
     bool controlPermitted;
 } PositionControlInput;
 
+/* Read-only result/status contract returned to the application. Mechanical speed
+ * is converted to electrical rad/s only in electricalRadPerSec for the existing
+ * NXP speed-loop input; no current, voltage, duty, or PWM request is produced. */
 typedef struct
 {
     bool valid;
@@ -92,6 +113,9 @@ typedef struct
     uint32_t diagnosticFlags;
 } PositionControlOutput;
 
+/* Controller-owned runtime state. The application allocates this object but must
+ * modify it only through the public API below. The signed 64-bit accumulator is
+ * independent of the wrapped electrical angle used by the original FOC code. */
 typedef struct
 {
     PositionControlConfig config;
@@ -116,6 +140,12 @@ typedef struct
     uint32_t encoderDiagnosticFlags;
 } PositionControlState;
 
+/* Public API
+ *
+ * Typical call order:
+ *   Init -> ApplyTuning -> repeated UpdateEncoder -> Enable -> SetTarget -> Run.
+ * Reset/Disable are safe from any state. Enable is bumpless and captures the
+ * current relative position; a later target command is required to arm motion. */
 bool PositionControl_Init(PositionControlState *state,
                           const PositionControlConfig *config);
 void PositionControl_Reset(PositionControlState *state);
