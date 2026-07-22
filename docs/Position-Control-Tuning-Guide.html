@@ -1,0 +1,965 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Position-Control Tuning Guide</title>
+<style>
+  :root {
+    --navy: #15324a;
+    --blue: #1f6b91;
+    --cyan: #2d9db7;
+    --ink: #1f2933;
+    --muted: #5c6b76;
+    --line: #ccd8df;
+    --pale: #eef6f8;
+    --warn-bg: #fff6de;
+    --warn-line: #d89b17;
+    --danger: #a63232;
+  }
+
+  @page {
+    size: A4;
+    margin: 17mm 14mm 18mm 14mm;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { font-size: 10.2pt; }
+
+  body {
+    margin: 0;
+    color: var(--ink);
+    font-family: "Segoe UI", Arial, sans-serif;
+    line-height: 1.46;
+    background: white;
+  }
+
+  .cover {
+    min-height: 250mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    page-break-after: always;
+    color: white;
+    background: linear-gradient(145deg, var(--navy) 0%, #204d6a 58%, var(--cyan) 100%);
+    margin: -17mm -14mm -18mm -14mm;
+    padding: 30mm 23mm 22mm 23mm;
+  }
+
+  .cover-kicker {
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 10pt;
+    font-weight: 700;
+    opacity: 0.85;
+  }
+
+  .cover h1 {
+    color: white;
+    font-size: 31pt;
+    line-height: 1.08;
+    margin: 16mm 0 6mm 0;
+    max-width: 150mm;
+  }
+
+  .cover .subtitle {
+    font-size: 14pt;
+    line-height: 1.45;
+    max-width: 145mm;
+    color: #dff5fa;
+  }
+
+  .cover-card {
+    border-left: 3px solid #74d9e8;
+    padding: 2mm 0 2mm 6mm;
+    font-size: 10.5pt;
+    line-height: 1.7;
+  }
+
+  .cover-note {
+    margin-top: 10mm;
+    color: #dff5fa;
+    font-size: 9pt;
+  }
+
+  .toc {
+    page-break-after: always;
+  }
+
+  .toc h2 {
+    margin-top: 0;
+    border-bottom: 3px solid var(--cyan);
+    padding-bottom: 3mm;
+  }
+
+  .toc a {
+    display: block;
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--line);
+    padding: 2.1mm 0;
+  }
+
+  .toc-main { font-weight: 650; }
+  .toc-sub { padding-left: 7mm !important; color: var(--muted) !important; font-size: 9.2pt; }
+
+  h2 {
+    color: var(--navy);
+    font-size: 19pt;
+    line-height: 1.2;
+    margin: 10mm 0 4mm 0;
+    padding-bottom: 2mm;
+    border-bottom: 2px solid var(--cyan);
+    break-after: avoid-page;
+  }
+
+  h3 {
+    color: var(--blue);
+    font-size: 13.5pt;
+    margin: 7mm 0 2.5mm 0;
+    break-after: avoid-page;
+  }
+
+  p { margin: 0 0 3.2mm 0; }
+
+  ul, ol {
+    margin: 1.5mm 0 4mm 0;
+    padding-left: 7mm;
+  }
+
+  li { margin: 1.2mm 0; padding-left: 1mm; }
+
+  code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 8.7pt;
+    color: #153b52;
+    background: #edf3f6;
+    border: 1px solid #d9e3e8;
+    border-radius: 3px;
+    padding: 0.2mm 0.8mm;
+    overflow-wrap: anywhere;
+  }
+
+  pre {
+    margin: 3mm 0 5mm 0;
+    padding: 4mm;
+    border-left: 3px solid var(--cyan);
+    background: #f4f8fa;
+    color: #18394b;
+    border-radius: 0 4px 4px 0;
+    white-space: pre-wrap;
+    break-inside: avoid-page;
+  }
+
+  pre code {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    font-size: 8.5pt;
+  }
+
+  .table-wrap {
+    margin: 3mm 0 6mm 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 7.7pt;
+  }
+
+  thead { display: table-header-group; }
+  tr { break-inside: avoid-page; }
+
+  th {
+    color: white;
+    background: var(--navy);
+    text-align: left;
+    vertical-align: top;
+    padding: 2.1mm 1.7mm;
+    border: 1px solid var(--navy);
+  }
+
+  td {
+    vertical-align: top;
+    padding: 1.8mm 1.7mm;
+    border: 1px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+
+  tbody tr:nth-child(even) { background: var(--pale); }
+  td code { font-size: 7.2pt; }
+
+  #safety-rules + p,
+  #safety-rules + p + ol {
+    border-left: 3px solid var(--warn-line);
+    background: var(--warn-bg);
+    padding-left: 4mm;
+    padding-right: 3mm;
+  }
+
+  #final-recommended-starting-value-card + pre {
+    border: 2px solid var(--cyan);
+    border-left-width: 5px;
+    background: #edf9fb;
+    font-size: 9pt;
+  }
+
+  .footer {
+    position: fixed;
+    bottom: -13mm;
+    left: 0;
+    right: 0;
+    color: #71808a;
+    font-size: 7.5pt;
+    border-top: 1px solid var(--line);
+    padding-top: 2mm;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .cover .footer { display: none; }
+
+  @media print {
+    a { color: inherit; }
+    h2 { break-after: avoid; }
+    .toc { break-after: page; }
+  }
+</style>
+</head>
+<body>
+  <section class="cover">
+    <div>
+      <div class="cover-kicker">S32M276 PMSM FOC Firmware</div>
+      <h1>Position-Control Tuning Guide</h1>
+      <div class="subtitle">FreeMASTER Variable Watch commissioning procedure for relative multi-turn mechanical position control.</div>
+    </div>
+    <div>
+      <div class="cover-card">
+        <strong>Motor:</strong> Faulhaber 3216 W 012 BXT H<br>
+        <strong>Encoder:</strong> IEF3-4096L-128, 512 quadrature counts/revolution<br>
+        <strong>Initial condition:</strong> Mechanically unloaded<br>
+        <strong>Requested later ceiling:</strong> 2000 RPM<br>
+        <strong>Document date:</strong> 22 July 2026
+      </div>
+      <div class="cover-note">Bench commissioning guide. Calculated starting values are not a claim of hardware validation.</div>
+    </div>
+  </section>
+
+  <section class="toc">
+    <h2>Contents</h2>
+    <a class="toc-main" href="#1-purpose-and-assumptions">1. Purpose and assumptions</a>
+<a class="toc-main" href="#2-safety-rules">2. Safety rules</a>
+<a class="toc-main" href="#3-freemaster-preparation">3. FreeMASTER preparation</a>
+<a class="toc-main" href="#4-required-writable-variables">4. Required writable variables</a>
+<a class="toc-sub" href="#4-1-tuning-values">4.1 Tuning values</a>
+<a class="toc-sub" href="#4-2-target-values">4.2 Target values</a>
+<a class="toc-sub" href="#4-3-command-counters">4.3 Command counters</a>
+<a class="toc-main" href="#5-required-read-only-status-variables">5. Required read-only status variables</a>
+<a class="toc-main" href="#6-exact-first-tuning-procedure">6. Exact first-tuning procedure</a>
+<a class="toc-sub" href="#step-1-start-in-the-original-encoder-speed-control-mode">Step 1: Start in the original encoder speed-control mode</a>
+<a class="toc-sub" href="#step-2-verify-position-direction-with-motor-output-disabled">Step 2: Verify position direction with motor output disabled</a>
+<a class="toc-sub" href="#step-3-write-the-initial-tuning">Step 3: Write the initial tuning</a>
+<a class="toc-sub" href="#step-4-enable-without-commanding-motion">Step 4: Enable without commanding motion</a>
+<a class="toc-sub" href="#step-5-command-5-degrees">Step 5: Command +5 degrees</a>
+<a class="toc-sub" href="#step-6-command-5-degrees">Step 6: Command -5 degrees</a>
+<a class="toc-sub" href="#step-7-disable-and-re-enable">Step 7: Disable and re-enable</a>
+<a class="toc-main" href="#7-kp-tuning-procedure">7. Kp tuning procedure</a>
+<a class="toc-main" href="#8-ki-tuning-procedure">8. Ki tuning procedure</a>
+<a class="toc-main" href="#9-increasing-the-speed-ceiling-toward-2000-rpm">9. Increasing the speed ceiling toward 2000 RPM</a>
+<a class="toc-main" href="#10-common-problems-and-exact-responses">10. Common problems and exact responses</a>
+<a class="toc-sub" href="#enable-does-nothing">Enable does nothing</a>
+<a class="toc-sub" href="#enable-was-incremented-while-control-permitted-was-zero">Enable was incremented while Control Permitted was zero</a>
+<a class="toc-sub" href="#motor-enables-but-does-not-move-after-a-target">Motor enables but does not move after a target</a>
+<a class="toc-sub" href="#tuning-is-rejected">Tuning is rejected</a>
+<a class="toc-sub" href="#direction-is-wrong">Direction is wrong</a>
+<a class="toc-sub" href="#motor-overshoots-hunts-buzzes-or-chatters">Motor overshoots, hunts, buzzes, or chatters</a>
+<a class="toc-sub" href="#at-target-never-becomes-one">At Target never becomes one</a>
+<a class="toc-sub" href="#position-control-stops-unexpectedly">Position control stops unexpectedly</a>
+<a class="toc-sub" href="#diagnostic-flags-are-nonzero">Diagnostic flags are nonzero</a>
+<a class="toc-sub" href="#freemaster-cannot-find-the-variables">FreeMASTER cannot find the variables</a>
+<a class="toc-main" href="#11-end-of-session-safe-shutdown">11. End-of-session safe shutdown</a>
+<a class="toc-main" href="#12-final-recommended-starting-value-card">12. Final recommended starting-value card</a>
+
+  </section>
+
+  <div class="footer"><span>Position-Control Tuning Guide</span><span>S32M276 / Faulhaber 3216</span></div>
+  <main>
+    <h2 id="1-purpose-and-assumptions">1. Purpose and assumptions</h2>
+<p>This document is the step-by-step procedure for the first hardware tuning of the custom relative position controller.</p>
+<p>This procedure assumes:</p>
+<ul>
+<li>Faulhaber 3216 W 012 BXT H motor;</li>
+<li>motor mechanically unloaded;</li>
+<li>encoder resolution of 128 lines/revolution, or 512 quadrature counts/revolution;</li>
+<li>7 motor pole pairs;</li>
+<li>position targets entered in mechanical degrees;</li>
+<li>requested eventual position-mode ceiling of 2000 RPM;</li>
+<li>tuning performed through the FreeMASTER Variable Watch window.</li>
+</ul>
+<p>Position is relative, not absolute. After reset, the firmware does not know an absolute machine position and does not perform homing. One encoder count is:</p>
+<pre><code>360 degrees / 512 counts = 0.703125 mechanical degree/count</code></pre>
+<p>The requested 2000 RPM ceiling is:</p>
+<pre><code>2000 RPM x 2*pi / 60 = 209.4395 mechanical rad/s</code></pre>
+<p>The firmware-derived mechanical safety ceiling is approximately 543.914 rad/s (5194 RPM), calculated from <code>WEL_MAX</code>, the existing 0.98 application factor, and 7 pole pairs. Therefore, 2000 RPM is below the firmware ceiling. It is still too aggressive for the first position test. Start at 100 RPM and raise the limit only after the lower-speed stages pass.</p>
+<p>Authoritative configuration locations:</p>
+<ul>
+<li>Pole pairs: <code>src/config/PMSM_appconfig.h:25</code></li>
+<li>Electrical speed scale: <code>src/config/PMSM_appconfig.h:34</code></li>
+<li>Encoder lines/revolution: <code>src/config/PMSM_appconfig.h:99</code></li>
+<li>Position-loop period (0.001 s): <code>src/main.c:148</code></li>
+<li>Firmware safety-speed derivation: <code>src/main.c:1039-1048</code></li>
+<li>Existing 1 kHz slow-loop call site: <code>src/main.c:1808-1828</code></li>
+</ul>
+<p>This guide provides conservative engineering starting values. They are not hardware-validated values. Final values must be established from real bench results.</p>
+<h2 id="2-safety-rules">2. Safety rules</h2>
+<p>Before applying motor-bus power:</p>
+<ol>
+<li>Secure the unloaded motor so its body and wiring cannot rotate or be pulled into the rotor.</li>
+<li>Keep the shaft completely free of tools, clothing, wiring, and personnel.</li>
+<li>Have an independent means of removing motor-bus power. FreeMASTER is not an emergency stop.</li>
+<li>Use a current-limited supply where the hardware permits it. Do not weaken existing firmware current, voltage, temperature, or speed protections.</li>
+<li>Confirm the original encoder speed-control mode still works with position control disabled.</li>
+<li>Keep <code>PC Ki</code> at zero throughout the first unloaded tests.</li>
+<li>Begin with +5 and -5 degree targets. Do not begin with a full revolution or a 2000 RPM move.</li>
+<li>If the motor moves when position mode is enabled but before a target is sent, remove power and investigate. Enable is designed to capture the current position and request zero speed.</li>
+</ol>
+<h2 id="3-freemaster-preparation">3. FreeMASTER preparation</h2>
+<ol>
+<li>Build the latest <code>Debug_FLASH</code> firmware so the ELF contains the custom position-control globals.</li>
+<li>Make sure the FreeMASTER project uses the newly built ELF, not an older ELF.</li>
+<li>Begin from a fresh controller reset. This restores the unlisted software-limit fields to their disabled defaults at <code>src/main.c:1061-1064</code>.</li>
+<li>Add the variables listed in Sections 4 and 5 to Variable Watch.</li>
+<li>Treat every <code>g_positionCommandStaged</code> and <code>g_positionCommand</code> entry in this guide as writable.</li>
+<li>Treat every <code>g_positionStatus</code> entry as read-only. Never use a status field as a command.</li>
+</ol>
+<p>The global objects are declared at:</p>
+<ul>
+<li><code>g_positionCommandStaged</code>: <code>src/main.c:252</code></li>
+<li><code>g_positionCommand</code>: <code>src/main.c:253</code></li>
+<li><code>g_positionStatus</code>: <code>src/main.c:254</code></li>
+</ul>
+<h2 id="4-required-writable-variables">4. Required writable variables</h2>
+<p>Use the suggested display name in FreeMASTER so commands, settings, and status are easy to distinguish.</p>
+<h3 id="4-1-tuning-values">4.1 Tuning values</h3>
+<div class="table-wrap"><table><thead><tr>
+<th>Suggested FreeMASTER name</th>
+<th>Exact symbol</th>
+<th>First-test value</th>
+<th>Units</th>
+<th>Purpose</th>
+<th>Source definition</th>
+</tr></thead><tbody>
+<tr>
+<td><code>PC Tune - Kp</code></td>
+<td><code>g_positionCommandStaged.tuning.kpMechanicalRadPerSecPerCount</code></td>
+<td><code>0.0200</code></td>
+<td>mechanical rad/s/count</td>
+<td>Converts position error into a proportional speed request.</td>
+<td><code>src/position_control.h:63</code>; copied at <code>src/main.c:1001-1002</code></td>
+</tr>
+<tr>
+<td><code>PC Tune - Ki</code></td>
+<td><code>g_positionCommandStaged.tuning.kiMechanicalRadPerSecPerCountSec</code></td>
+<td><code>0.0</code></td>
+<td>mechanical rad/s/(count*s)</td>
+<td>Integrates persistent position error. Keep zero for unloaded commissioning.</td>
+<td><code>src/position_control.h:64</code>; copied at <code>src/main.c:1003-1004</code></td>
+</tr>
+<tr>
+<td><code>PC Tune - Integral Limit</code></td>
+<td><code>g_positionCommandStaged.tuning.integratorLimitMechanicalRadPerSec</code></td>
+<td><code>1.0472</code></td>
+<td>mechanical rad/s</td>
+<td>Limits integral contribution to 10 RPM. It must be greater than zero before Ki can be nonzero.</td>
+<td><code>src/position_control.h:65</code>; copied at <code>src/main.c:1005-1006</code></td>
+</tr>
+<tr>
+<td><code>PC Tune - Maximum Speed</code></td>
+<td><code>g_positionCommandStaged.tuning.maxMechanicalRadPerSec</code></td>
+<td><code>10.4720</code></td>
+<td>mechanical rad/s</td>
+<td>Limits initial position-mode speed to 100 RPM.</td>
+<td><code>src/position_control.h:66</code>; copied at <code>src/main.c:1007-1008</code></td>
+</tr>
+<tr>
+<td><code>PC Tune - Maximum Acceleration</code></td>
+<td><code>g_positionCommandStaged.tuning.maxAccelMechanicalRadPerSec2</code></td>
+<td><code>20.9440</code></td>
+<td>mechanical rad/s^2</td>
+<td>Limits acceleration to 200 RPM/s.</td>
+<td><code>src/position_control.h:67</code>; copied at <code>src/main.c:1009-1010</code></td>
+</tr>
+<tr>
+<td><code>PC Tune - Maximum Deceleration</code></td>
+<td><code>g_positionCommandStaged.tuning.maxDecelMechanicalRadPerSec2</code></td>
+<td><code>20.9440</code></td>
+<td>mechanical rad/s^2</td>
+<td>Limits deceleration to 200 RPM/s. Lower it if DC-bus voltage rises excessively during stopping.</td>
+<td><code>src/position_control.h:68</code>; copied at <code>src/main.c:1011-1012</code></td>
+</tr>
+<tr>
+<td><code>PC Tune - Position Tolerance</code></td>
+<td><code>g_positionCommandStaged.tuning.positionToleranceCounts</code></td>
+<td><code>1</code></td>
+<td>encoder count</td>
+<td>Requests zero position speed when absolute error is 1 count or less. One count is 0.703125 degree.</td>
+<td><code>src/position_control.h:69</code>; copied at <code>src/main.c:1013-1014</code></td>
+</tr>
+<tr>
+<td><code>PC Tune - Stopped Speed</code></td>
+<td><code>g_positionCommandStaged.tuning.stoppedMechanicalRadPerSec</code></td>
+<td><code>0.1000</code></td>
+<td>mechanical rad/s</td>
+<td>Shaft must be below this speed, about 0.955 RPM, before <code>atTarget</code> can qualify.</td>
+<td><code>src/position_control.h:70</code>; copied at <code>src/main.c:1015-1016</code></td>
+</tr>
+<tr>
+<td><code>PC Tune - Target Dwell</code></td>
+<td><code>g_positionCommandStaged.tuning.atTargetDwellSec</code></td>
+<td><code>0.2500</code></td>
+<td>second</td>
+<td>Position and speed must remain qualified for 250 ms before <code>atTarget</code> becomes 1.</td>
+<td><code>src/position_control.h:71</code>; copied at <code>src/main.c:1017-1018</code></td>
+</tr>
+</tbody></table></div>
+<p>Why <code>PC Kp = 0.0200</code> is the recommended starting point:</p>
+<ul>
+<li>It gives an equivalent outer position-loop gain of approximately 1.63 per second with the 512-count encoder.</li>
+<li>A 5 degree error becomes approximately 7 counts and requests only about 0.142 rad/s, or 1.36 RPM.</li>
+<li>A one-revolution error requests approximately 10.24 rad/s, close to the initial 100 RPM speed limit.</li>
+<li>It keeps the outer-loop response below the existing 1 Hz speed-loop bandwidth.</li>
+</ul>
+<p>The actual P/PI calculation and limiting are implemented at <code>src/position_control.c:701-760</code>. Tuning validation is at <code>src/position_control.c:195-245</code>.</p>
+<h3 id="4-2-target-values">4.2 Target values</h3>
+<div class="table-wrap"><table><thead><tr>
+<th>Suggested FreeMASTER name</th>
+<th>Exact symbol</th>
+<th>Required value</th>
+<th>Units</th>
+<th>Purpose</th>
+<th>Source definition</th>
+</tr></thead><tbody>
+<tr>
+<td><code>PC Target - Units</code></td>
+<td><code>g_positionCommandStaged.targetUnits</code></td>
+<td><code>1</code></td>
+<td>enum</td>
+<td>Selects degrees. <code>0</code> means counts and <code>1</code> means degrees. Leave it at 1 for this guide.</td>
+<td><code>src/main.c:163</code>; enum values at <code>src/main.c:152-156</code>; copied at <code>src/main.c:1029</code></td>
+</tr>
+<tr>
+<td><code>PC Target - Degrees</code></td>
+<td><code>g_positionCommandStaged.targetDegrees</code></td>
+<td><code>0.0</code> initially; then <code>+5.0</code> or <code>-5.0</code></td>
+<td>mechanical degree</td>
+<td>The next relative multi-turn position target.</td>
+<td><code>src/main.c:162</code>; copied at <code>src/main.c:1028</code></td>
+</tr>
+</tbody></table></div>
+<p>Because the encoder has 0.703125 degree/count resolution, a requested 5 degrees is rounded to 7 counts, or 4.921875 degrees. This is expected and is not a tuning error.</p>
+<h3 id="4-3-command-counters">4.3 Command counters</h3>
+<div class="table-wrap"><table><thead><tr>
+<th>Suggested FreeMASTER name</th>
+<th>Exact symbol</th>
+<th>Value to write</th>
+<th>Purpose</th>
+<th>Source definition</th>
+<th>Processing location</th>
+</tr></thead><tbody>
+<tr>
+<td><code>PC Command - Apply Tuning</code></td>
+<td><code>g_positionCommand.applySequence</code></td>
+<td>current value + 1</td>
+<td>Atomically validates and activates all staged tuning values. Write it last after changing tuning.</td>
+<td><code>src/main.c:168</code></td>
+<td><code>src/main.c:1185-1197</code></td>
+</tr>
+<tr>
+<td><code>PC Command - Enable</code></td>
+<td><code>g_positionCommand.enableSequence</code></td>
+<td>current value + 1</td>
+<td>Enables position ownership, captures the current position, clears motion state, and waits for a later target.</td>
+<td><code>src/main.c:169</code></td>
+<td><code>src/main.c:1208-1215</code></td>
+</tr>
+<tr>
+<td><code>PC Command - Disable</code></td>
+<td><code>g_positionCommand.disableSequence</code></td>
+<td>current value + 1</td>
+<td>Disables position control and safely releases its speed-reference ownership.</td>
+<td><code>src/main.c:170</code></td>
+<td><code>src/main.c:1173-1179</code></td>
+</tr>
+<tr>
+<td><code>PC Command - Send Target</code></td>
+<td><code>g_positionCommand.setTargetSequence</code></td>
+<td>current value + 1</td>
+<td>Accepts the staged target value and units. Write it last after changing the target.</td>
+<td><code>src/main.c:172</code></td>
+<td><code>src/main.c:1217-1241</code></td>
+</tr>
+</tbody></table></div>
+<p>Command counters are events, not ON/OFF variables. At a fresh reset they start at zero (<code>src/main.c:1073-1077</code>). A normal sequence is:</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Event</th>
+<th>Enable counter</th>
+<th>Disable counter</th>
+<th>Apply counter</th>
+<th>Target counter</th>
+</tr></thead><tbody>
+<tr>
+<td>Reset</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Apply first tuning</td>
+<td>0</td>
+<td>0</td>
+<td>1</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Enable</td>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Send first target</td>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Disable</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Enable again</td>
+<td>2</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Send another target</td>
+<td>2</td>
+<td>1</td>
+<td>1</td>
+<td>2</td>
+</tr>
+</tbody></table></div>
+<p>Do not set the enable counter to zero to disable. Changing a processed command counter in either direction can be interpreted as another command. Always use the separate disable counter and monotonically increment each counter.</p>
+<h2 id="5-required-read-only-status-variables">5. Required read-only status variables</h2>
+<div class="table-wrap"><table><thead><tr>
+<th>Suggested FreeMASTER name</th>
+<th>Exact symbol</th>
+<th>Expected condition</th>
+<th>Purpose</th>
+<th>Source definition/update</th>
+</tr></thead><tbody>
+<tr>
+<td><code>PC Encoder - Wrapped Count</code></td>
+<td><code>encoderPospe.correctedWrappedMechanicalCount</code></td>
+<td><code>0</code> through <code>511</code></td>
+<td>Direct corrected encoder count used for the manual direction and one-revolution scaling check.</td>
+<td>Field at <code>src/pospe_sensor.h:77</code>; global object at <code>src/main.c:234</code>; updated at <code>src/pospe_sensor.c:66</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Control Permitted</code></td>
+<td><code>g_positionStatus.controlPermitted</code></td>
+<td><code>1</code> before enable</td>
+<td>Confirms the application is running in encoder-based speed control.</td>
+<td><code>src/main.c:196</code>; policy at <code>src/main.c:1094-1100</code>; update at <code>src/main.c:1149</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Encoder Valid</code></td>
+<td><code>g_positionStatus.encoderValid</code></td>
+<td><code>1</code> before enable</td>
+<td>Confirms the position module has valid encoder data.</td>
+<td><code>src/main.c:197</code>; update at <code>src/main.c:1150</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Enabled</code></td>
+<td><code>g_positionStatus.enabled</code></td>
+<td><code>1</code> after enable</td>
+<td>Confirms the enable request was accepted.</td>
+<td><code>src/main.c:194</code>; update at <code>src/main.c:1147</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Ownership Active</code></td>
+<td><code>g_positionStatus.ownershipActive</code></td>
+<td><code>1</code> after enable</td>
+<td>Confirms the position controller currently owns the existing speed reference.</td>
+<td><code>src/main.c:195</code>; update at <code>src/main.c:1148</code>; ownership write at <code>src/main.c:1249-1268</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Target Armed</code></td>
+<td><code>g_positionStatus.targetArmed</code></td>
+<td><code>0</code> immediately after enable; <code>1</code> after target</td>
+<td>Confirms a later explicit target has been accepted.</td>
+<td><code>src/main.c:198</code>; update at <code>src/main.c:1151</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Actual Position Deg</code></td>
+<td><code>g_positionStatus.actualPositionDegrees</code></td>
+<td>Observe</td>
+<td>Relative multi-turn mechanical position.</td>
+<td><code>src/main.c:178</code>; update at <code>src/main.c:1126</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Position Error Counts</code></td>
+<td><code>g_positionStatus.positionErrorCounts</code></td>
+<td>Trends toward <code>0</code>, normally finishes within +/-1</td>
+<td>Target minus actual position.</td>
+<td><code>src/main.c:180</code>; update at <code>src/main.c:1128</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Measured Speed</code></td>
+<td><code>g_positionStatus.measuredMechanicalRadPerSec</code></td>
+<td>Near <code>0</code> at rest</td>
+<td>Required to judge settling and stopped-speed qualification.</td>
+<td><code>src/main.c:184</code>; update at <code>src/main.c:1134-1135</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Integral Contribution</code></td>
+<td><code>g_positionStatus.integratorMechanicalRadPerSec</code></td>
+<td><code>0</code> while Ki is zero</td>
+<td>Shows integral buildup when Ki is introduced later.</td>
+<td><code>src/main.c:185</code>; update at <code>src/main.c:1136-1137</code></td>
+</tr>
+<tr>
+<td><code>PC Status - At Target</code></td>
+<td><code>g_positionStatus.atTarget</code></td>
+<td>Eventually <code>1</code></td>
+<td>Confirms error, stopped speed, and dwell requirements are all met.</td>
+<td><code>src/main.c:199</code>; update at <code>src/main.c:1152</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Tuning Accepted</code></td>
+<td><code>g_positionStatus.applyAccepted</code></td>
+<td><code>1</code> after every apply</td>
+<td>Indicates the latest tuning snapshot passed validation.</td>
+<td><code>src/main.c:203</code>; written at <code>src/main.c:1193-1196</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Tuning Result</code></td>
+<td><code>g_positionStatus.tuningResult</code></td>
+<td><code>1</code> after apply</td>
+<td>Identifies why a tuning snapshot was rejected.</td>
+<td><code>src/main.c:190</code>; update at <code>src/main.c:1145</code>; enum at <code>src/position_control.h:23-31</code></td>
+</tr>
+<tr>
+<td><code>PC Status - Diagnostic Flags</code></td>
+<td><code>g_positionStatus.diagnosticFlags</code></td>
+<td><code>0x00000000</code></td>
+<td>Reports encoder, configuration, permission, or numeric problems. Display in hexadecimal.</td>
+<td><code>src/main.c:189</code>; update at <code>src/main.c:1144</code>; bits at <code>src/position_control.h:35-43</code></td>
+</tr>
+</tbody></table></div>
+<p>Do not write any <code>g_positionStatus</code> variable from FreeMASTER, even though it resides in RAM.</p>
+<h2 id="6-exact-first-tuning-procedure">6. Exact first-tuning procedure</h2>
+<p>Follow these steps in order.</p>
+<h3 id="step-1-start-in-the-original-encoder-speed-control-mode">Step 1: Start in the original encoder speed-control mode</h3>
+<ol>
+<li>Keep position control disabled.</li>
+<li>Enter the application&#39;s normal run state.</li>
+<li>Select existing <code>speedControl</code> mode, encoder sensor feedback, and <code>encoder1</code> position feedback.</li>
+<li>Verify:</li>
+</ol>
+<pre><code>PC Status - Control Permitted = 1
+PC Status - Encoder Valid     = 1
+PC Status - Diagnostic Flags  = 0x00000000</code></pre>
+<p>The exact permission conditions are at <code>src/main.c:1094-1100</code>.</p>
+<h3 id="step-2-verify-position-direction-with-motor-output-disabled">Step 2: Verify position direction with motor output disabled</h3>
+<ol>
+<li>With PWM/motor output safely disabled, rotate the shaft manually in the intended positive direction.</li>
+<li>Observe <code>PC Encoder - Wrapped Count</code>. It must stay in the range 0 through 511 and change consistently with rotation.</li>
+<li>Cross the count wrap in both directions. Forward wrap should behave as <code>511 -&gt; 0</code>; reverse wrap should behave as <code>0 -&gt; 511</code>.</li>
+<li>Rotate one complete mechanical revolution and confirm exactly 512 count transitions occur.</li>
+<li>When the application later enters the permitted run state, confirm <code>PC Status - Actual Position Deg</code> uses the same positive direction.</li>
+</ol>
+<p>If the sign is wrong, do not use negative Kp or Ki. Negative gains are rejected, and changing gain sign would not safely correct the encoder/drive sign convention. Stop and correct the encoder direction integration before powered position tests.</p>
+<h3 id="step-3-write-the-initial-tuning">Step 3: Write the initial tuning</h3>
+<p>Write all of these staged values:</p>
+<pre><code>PC Tune - Kp                   = 0.0200
+PC Tune - Ki                   = 0.0
+PC Tune - Integral Limit       = 1.0472
+PC Tune - Maximum Speed        = 10.4720
+PC Tune - Maximum Acceleration = 20.9440
+PC Tune - Maximum Deceleration = 20.9440
+PC Tune - Position Tolerance   = 1
+PC Tune - Stopped Speed        = 0.1000
+PC Tune - Target Dwell         = 0.2500
+PC Target - Units              = 1
+PC Target - Degrees            = 0.0</code></pre>
+<p>Increment <code>PC Command - Apply Tuning</code> once. Then verify:</p>
+<pre><code>PC Status - Tuning Accepted = 1
+PC Status - Tuning Result   = 1</code></pre>
+<p>If tuning is rejected, do not enable. Correct the rejected values and increment the apply counter again. A rejected staged configuration does not partially replace the previous active configuration.</p>
+<p>Tuning-result values:</p>
+<pre><code>0 = not applied
+1 = accepted
+2 = null configuration
+3 = NaN, infinity, or another invalid numeric value
+4 = invalid range or limit
+5 = inconsistent software limits</code></pre>
+<h3 id="step-4-enable-without-commanding-motion">Step 4: Enable without commanding motion</h3>
+<ol>
+<li>Reconfirm <code>Control Permitted = 1</code>, <code>Encoder Valid = 1</code>, and diagnostics are zero.</li>
+<li>Increment <code>PC Command - Enable</code> once.</li>
+<li>Do not write the target or target counter at the same time.</li>
+<li>Verify:</li>
+</ol>
+<pre><code>PC Status - Enabled          = 1
+PC Status - Ownership Active = 1
+PC Status - Target Armed     = 0
+PC Status - Measured Speed   approximately 0</code></pre>
+<p>The shaft should not move. Enable captures the current position as the internal target, clears the integral and rate-limiter states, and leaves motion unarmed. This behavior is implemented at <code>src/position_control.c:412-445</code>.</p>
+<p>If the shaft moves on enable, increment the disable counter and remove motor-bus power. Do not continue tuning.</p>
+<h3 id="step-5-command-5-degrees">Step 5: Command +5 degrees</h3>
+<ol>
+<li>Set <code>PC Target - Units = 1</code>.</li>
+<li>Set <code>PC Target - Degrees = 5.0</code>.</li>
+<li>Increment <code>PC Command - Send Target</code> once.</li>
+<li>Confirm <code>PC Status - Target Armed = 1</code>.</li>
+<li>Observe actual position, position error, measured speed, existing Iq feedback/request, DC-bus voltage, and existing fault status.</li>
+<li>Wait for <code>PC Status - At Target = 1</code>.</li>
+</ol>
+<p>Expected behavior:</p>
+<ul>
+<li>Actual position increases toward approximately 4.92 degrees because of encoder quantization.</li>
+<li>Position error approaches zero and finishes within +/-1 count.</li>
+<li>Motion is slow and smooth.</li>
+<li>No repeated hunting, buzzing, overcurrent, or DC-bus overvoltage occurs.</li>
+</ul>
+<h3 id="step-6-command-5-degrees">Step 6: Command -5 degrees</h3>
+<p>Set <code>PC Target - Degrees = -5.0</code>, then increment the target counter again. This is an absolute target in the current relative coordinate system, so the move from approximately +5 to -5 degrees is approximately 10 degrees.</p>
+<p>Confirm correct reverse direction and the same stable settling behavior.</p>
+<h3 id="step-7-disable-and-re-enable">Step 7: Disable and re-enable</h3>
+<ol>
+<li>Increment <code>PC Command - Disable</code> once.</li>
+<li>Verify <code>Enabled = 0</code> and <code>Ownership Active = 0</code>.</li>
+<li>Confirm the original application path remains usable.</li>
+<li>To enable again, increment the enable counter again; do not reuse its previous value.</li>
+<li>After re-enable, wait for <code>Target Armed = 0</code>, then send a new target by incrementing the target counter.</li>
+</ol>
+<p>Disable and permission loss clear the target-armed state, integrator, motion limiter, and generated speed request. A new target is required after every successful re-enable.</p>
+<h2 id="7-kp-tuning-procedure">7. Kp tuning procedure</h2>
+<p>Keep Ki at zero. Use alternating +5 and -5 degree targets and disable position control before large tuning changes.</p>
+<p>Recommended Kp progression:</p>
+<pre><code>0.0100 -&gt; 0.0200 -&gt; 0.0300 -&gt; 0.0400</code></pre>
+<p>At each value:</p>
+<ol>
+<li>Write Kp.</li>
+<li>Increment the apply counter.</li>
+<li>Confirm tuning acceptance.</li>
+<li>Enable if necessary.</li>
+<li>Send +5 and -5 degree targets.</li>
+<li>Wait for complete settling before the next command.</li>
+</ol>
+<p>Keep the lowest Kp that gives acceptable settling and holding behavior.</p>
+<p>Reduce Kp, normally by 25% to 50%, if any of these occur:</p>
+<ul>
+<li>repeated overshoot;</li>
+<li>hunting around the target;</li>
+<li>audible buzzing or chatter;</li>
+<li>alternating position error without settling;</li>
+<li>repeated current saturation in the existing current/speed displays;</li>
+<li>the existing speed loop cannot track the requested response.</li>
+</ul>
+<p>Do not progress above <code>0.0400</code> during initial unloaded commissioning without reviewing recorded position, speed, and current behavior. With this encoder, <code>0.0400</code> already gives an equivalent outer-loop gain of approximately 3.26 per second, which is a substantial fraction of the existing speed-loop bandwidth.</p>
+<h2 id="8-ki-tuning-procedure">8. Ki tuning procedure</h2>
+<p>For the unloaded motor, the recommended Ki is <code>0.0</code>. Encoder quantization and the existing speed loop normally make integral position control unnecessary during the first test.</p>
+<p>Only introduce Ki after P-only behavior is stable and only if a persistent error remains under the intended real load.</p>
+<p>Conservative Ki progression:</p>
+<pre><code>0.00000 -&gt; 0.00025 -&gt; 0.00050 -&gt; 0.00100</code></pre>
+<p>Keep the integral limit at <code>1.0472</code> mechanical rad/s (10 RPM) during these tests. Monitor <code>PC Status - Integral Contribution</code>.</p>
+<p>Immediately return Ki to zero if:</p>
+<ul>
+<li>the motor develops slow oscillation;</li>
+<li>overshoot grows after repeated moves;</li>
+<li>the integral contribution stays at its positive or negative limit;</li>
+<li>the motor creeps or hunts near the target;</li>
+<li>current remains elevated after the target is reached.</li>
+</ul>
+<p>The integrator is cleared inside the position tolerance and on disable, invalid feedback, or permission loss. Anti-windup inhibits integration when limiting prevents motion in the error direction (<code>src/position_control.c:713-760</code>).</p>
+<h2 id="9-increasing-the-speed-ceiling-toward-2000-rpm">9. Increasing the speed ceiling toward 2000 RPM</h2>
+<p>Do not jump directly from the first test to 2000 RPM. Use the following progression only after direction, Kp response, stopping, disable, and fault behavior have passed at the preceding stage.</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Stage</th>
+<th>Maximum speed</th>
+<th>FreeMASTER value</th>
+<th>Suggested acceleration/deceleration</th>
+<th>FreeMASTER value</th>
+</tr></thead><tbody>
+<tr>
+<td>First test</td>
+<td>100 RPM</td>
+<td><code>10.4720</code> rad/s</td>
+<td>200 RPM/s</td>
+<td><code>20.9440</code> rad/s^2</td>
+</tr>
+<tr>
+<td>Intermediate 1</td>
+<td>250 RPM</td>
+<td><code>26.1799</code> rad/s</td>
+<td>300 RPM/s</td>
+<td><code>31.4159</code> rad/s^2</td>
+</tr>
+<tr>
+<td>Intermediate 2</td>
+<td>500 RPM</td>
+<td><code>52.3599</code> rad/s</td>
+<td>500 RPM/s</td>
+<td><code>52.3599</code> rad/s^2</td>
+</tr>
+<tr>
+<td>Intermediate 3</td>
+<td>1000 RPM</td>
+<td><code>104.7198</code> rad/s</td>
+<td>500 RPM/s</td>
+<td><code>52.3599</code> rad/s^2</td>
+</tr>
+<tr>
+<td>Requested ceiling</td>
+<td>2000 RPM</td>
+<td><code>209.4395</code> rad/s</td>
+<td>500 RPM/s initially</td>
+<td><code>52.3599</code> rad/s^2</td>
+</tr>
+</tbody></table></div>
+<p>At every stage:</p>
+<ol>
+<li>Disable position control.</li>
+<li>Change maximum speed, acceleration, and deceleration.</li>
+<li>Increment the apply counter and confirm acceptance.</li>
+<li>Re-enable and send a new small target first.</li>
+<li>Increase target distance only after the small target remains stable.</li>
+<li>Monitor existing Iq, speed tracking, DC-bus voltage, and fault status.</li>
+</ol>
+<p>The configured maximum speed is only a clamp; a small target and moderate Kp may never request that speed. Reaching 2000 RPM requires a sufficiently large position error. Do not create a large multi-turn step merely to prove the clamp until safe stopping distance and DC-bus regeneration have been verified.</p>
+<p>If the DC-bus voltage rises during stopping, reduce the deceleration value. A smaller deceleration number creates a slower stop and normally reduces regenerative stress.</p>
+<h2 id="10-common-problems-and-exact-responses">10. Common problems and exact responses</h2>
+<h3 id="enable-does-nothing">Enable does nothing</h3>
+<p>Check in this order:</p>
+<ol>
+<li><code>Control Permitted</code> must be 1.</li>
+<li><code>Encoder Valid</code> must be 1.</li>
+<li><code>Diagnostic Flags</code> should be zero.</li>
+<li>The enable counter must be different from the last successfully processed enable value.</li>
+<li>The tuning must have been accepted.</li>
+</ol>
+<p>Position control is permitted only in application <code>run</code>, existing <code>speedControl</code>, encoder sensor, and <code>encoder1</code> feedback (<code>src/main.c:1094-1100</code>).</p>
+<h3 id="enable-was-incremented-while-control-permitted-was-zero">Enable was incremented while Control Permitted was zero</h3>
+<p>The enable command remains pending because it is processed only when permission becomes true. This can cause a later unexpected enable.</p>
+<p>Before making control permitted:</p>
+<ul>
+<li>restore the enable counter to the last successfully processed enable value, if that value is known; or</li>
+<li>with motor-bus power removed, reset the controller so all command counters restart at zero.</li>
+</ul>
+<p>Do not increment enable and disable together. Disable has priority for one 1 ms boundary, but the unprocessed enable can remain pending and execute on the following boundary.</p>
+<h3 id="motor-enables-but-does-not-move-after-a-target">Motor enables but does not move after a target</h3>
+<p>Check:</p>
+<ol>
+<li><code>Target Units = 1</code>.</li>
+<li>Target degrees is finite and nonzero.</li>
+<li>The target counter was incremented after writing the target.</li>
+<li><code>Target Armed = 1</code>.</li>
+<li>Kp is greater than zero.</li>
+<li><code>Ownership Active = 1</code>.</li>
+<li>Position error is outside the configured tolerance.</li>
+</ol>
+<p>If enable and target counters were changed before the same 1 ms processing boundary, the target can execute automatically on the next boundary. For predictable commissioning, wait until <code>Enabled = 1</code> and <code>Target Armed = 0</code> before writing and sending the target.</p>
+<h3 id="tuning-is-rejected">Tuning is rejected</h3>
+<p>Use <code>Tuning Result</code>:</p>
+<ul>
+<li>Result 3: check for NaN, infinity, or corrupted floating-point input.</li>
+<li>Result 4: Kp/Ki or nonnegative fields may be negative; speed/acceleration/deceleration may be zero; Ki may be nonzero with a zero integral limit; or maximum speed may exceed the firmware ceiling.</li>
+<li>Result 5: enabled negative software limit is not below the enabled positive limit.</li>
+</ul>
+<p>The previous active tuning remains active. Correct all staged values, then increment the apply counter again.</p>
+<h3 id="direction-is-wrong">Direction is wrong</h3>
+<p>Disable immediately. Do not make Kp negative; negative Kp is rejected. Verify mechanical encoder direction and the existing encoder speed-control direction with motor output disabled before continuing.</p>
+<h3 id="motor-overshoots-hunts-buzzes-or-chatters">Motor overshoots, hunts, buzzes, or chatters</h3>
+<ol>
+<li>Increment disable.</li>
+<li>Set Ki to zero.</li>
+<li>Reduce Kp by 50%.</li>
+<li>Reduce maximum speed and acceleration.</li>
+<li>Apply tuning and repeat only a +/-5 degree test.</li>
+</ol>
+<p>One encoder count is 0.703125 degree, so sub-count mechanical regulation is impossible. Some small final quantization is normal.</p>
+<h3 id="at-target-never-becomes-one">At Target never becomes one</h3>
+<p>Check that position error reaches +/-1 count and measured speed falls below 0.1000 rad/s for at least 0.25 second.</p>
+<p>If the shaft is physically settled but encoder/speed noise prevents qualification:</p>
+<ol>
+<li>Try position tolerance <code>2</code> counts.</li>
+<li>If necessary, try stopped speed <code>0.2000</code> rad/s.</li>
+<li>Keep dwell at <code>0.2500</code> second initially.</li>
+</ol>
+<p>Do not enlarge these thresholds merely to hide visible motion or oscillation.</p>
+<h3 id="position-control-stops-unexpectedly">Position control stops unexpectedly</h3>
+<p>Permission loss, encoder invalidity, stop, fault, alignment, or leaving encoder speed mode disables position ownership. Check <code>Control Permitted</code>, <code>Encoder Valid</code>, and diagnostic flags. After the condition is corrected, increment enable again and then send a new target.</p>
+<h3 id="diagnostic-flags-are-nonzero">Diagnostic flags are nonzero</h3>
+<p>Display the value in hexadecimal:</p>
+<pre><code>0x01 = invalid controller configuration
+0x02 = encoder count outside configured range
+0x04 = ambiguous exact half-revolution sample change
+0x08 = encoder movement exceeded the physical per-sample limit
+0x10 = application permission denied
+0x20 = invalid numeric calculation</code></pre>
+<p>Multiple bits can be set. Do not continue powered testing until the cause is understood and the flag returns to zero.</p>
+<h3 id="freemaster-cannot-find-the-variables">FreeMASTER cannot find the variables</h3>
+<ol>
+<li>Refresh the S32DS project so <code>src/position_control.c</code> is included.</li>
+<li>Rebuild <code>Debug_FLASH</code>.</li>
+<li>Confirm the build completes successfully.</li>
+<li>Reload the new ELF/map symbols in FreeMASTER.</li>
+<li>Reconnect and search for the three global names again.</li>
+</ol>
+<h2 id="11-end-of-session-safe-shutdown">11. End-of-session safe shutdown</h2>
+<ol>
+<li>Increment <code>PC Command - Disable</code> once.</li>
+<li>Confirm <code>Enabled = 0</code> and <code>Ownership Active = 0</code>.</li>
+<li>Stop the original motor-control application using its normal procedure.</li>
+<li>Remove motor-bus power.</li>
+<li>Record the tested Kp, Ki, limits, supply settings, target sizes, and observed behavior.</li>
+<li>Do not copy values into firmware defaults until the complete low-speed and requested-speed progression has passed on hardware.</li>
+</ol>
+<h2 id="12-final-recommended-starting-value-card">12. Final recommended starting-value card</h2>
+<pre><code>Motor condition:                 unloaded
+Target units:                    1 (degrees)
+Kp:                              0.0200 mechanical rad/s/count
+Ki:                              0.0 mechanical rad/s/(count*s)
+Integral limit:                  1.0472 mechanical rad/s (10 RPM)
+Maximum speed:                   10.4720 mechanical rad/s (100 RPM)
+Maximum acceleration:            20.9440 mechanical rad/s^2 (200 RPM/s)
+Maximum deceleration:            20.9440 mechanical rad/s^2 (200 RPM/s)
+Position tolerance:              1 count (0.703125 degree)
+Stopped-speed threshold:         0.1000 mechanical rad/s (0.955 RPM)
+At-target dwell:                 0.2500 second
+First targets:                   +5.0 degrees, then -5.0 degrees
+Requested later speed ceiling:   209.4395 mechanical rad/s (2000 RPM)</code></pre>
+<p>Command reminder:</p>
+<pre><code>Apply tuning: increment applySequence
+Enable:       increment enableSequence
+Send target:  increment setTargetSequence
+Disable:      increment disableSequence</code></pre>
+<p>Never interpret an enable/disable command counter as a Boolean state. The actual state is reported only by <code>g_positionStatus.enabled</code> and <code>g_positionStatus.ownershipActive</code>.</p>
+
+  </main>
+</body>
+</html>
