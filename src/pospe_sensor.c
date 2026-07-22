@@ -53,6 +53,7 @@ tBool POSPE_GetPospeElEnc(encoderPospe_t *ptr)
     counterCW   = (uint16_t)((Emios_Icu_Ip_GetEdgeNumbers(0U, 6U))- ptr->counterCwOffset);     /* CW  counter */
     counterCCW  = (uint16_t)((Emios_Icu_Ip_GetEdgeNumbers(0U, 7U))- ptr->counterCcwOffset);    /* CCW counter */
     Absolut_position = (tFloat)(((uint16_t)(counterCW-counterCCW))&(uint16_t)(4*ENC_PULSES-1));
+    ptr->correctedWrappedMechanicalCount = (uint16_t)Absolut_position;
     /* Mechanical rotor position acquired from EMIOS0 - in fix point <-1,1) */
     f32ThRotMe_EMI = MLIB_ConvertPU_F32FLT(MLIB_Sub(MLIB_Div(Absolut_position, (2*ENC_PULSES)),1.0));
 
@@ -110,6 +111,7 @@ tBool POSPE_ClearPospeElEnc(encoderPospe_t *ptr)
     ptr->thRotEl.filt   = 0.0F;
     ptr->wRotEl.raw     = 0.0F;
     ptr->wRotEl.filt    = 0.0F;
+    ptr->correctedWrappedMechanicalCount = 0U;
 
     AMCLIB_TrackObsrvInit(&(ptr->TrackObsrv));
 

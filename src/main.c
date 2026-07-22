@@ -58,6 +58,7 @@ extern "C" {
 #include <meas_s32m.h>
 #include "motor_structure.h"
 #include "pospe_sensor.h"
+#include "position_control.h"
 #include "state_machine.h"
 #include "config\PMSM_appconfig.h"
 #include "Peripherals\peripherals_config.h"
@@ -112,7 +113,66 @@ extern "C" {
 * Note          Default PM motor of the MTRDEVKSPNK344 (SUNRISE 42BLY3A78-24110) is NOT equipped with Encoder sensor,
 *               thus ENCODER 0 is used as default for MTRDEVKSPNK344
 ******************************************************************************/
-#define ENCODER   0
+#define ENCODER   1
+
+#define POSITION_ENCODER_SAMPLE_SEC       (0.0001F)
+#define POSITION_LOOP_SAMPLE_SEC          (0.001F)
+#define POSITION_DEFAULT_SPEED_FRACTION   (0.01F)
+#define POSITION_DEFAULT_DWELL_SEC        (0.25F)
+
+typedef enum
+{
+    positionTargetCounts = 0,
+    positionTargetDegrees = 1
+} PositionControlTargetUnits;
+
+typedef struct
+{
+    PositionControlTuning tuning;
+    int64_t targetCounts;
+    float targetDegrees;
+    uint32_t targetUnits;
+} PositionControlCommandStaged;
+
+typedef struct
+{
+    uint32_t applySequence;
+    uint32_t enableSequence;
+    uint32_t disableSequence;
+    uint32_t setSoftwareZeroSequence;
+    uint32_t setTargetSequence;
+} PositionControlCommand;
+
+typedef struct
+{
+    int64_t actualPositionCounts;
+    float actualPositionDegrees;
+    int64_t targetPositionCounts;
+    int64_t positionErrorCounts;
+    float requestedMechanicalRadPerSec;
+    float limitedMechanicalRadPerSec;
+    float electricalRadPerSec;
+    float measuredMechanicalRadPerSec;
+    float integratorMechanicalRadPerSec;
+    float activeMaxMechanicalRadPerSec;
+    float activeMaxAccelMechanicalRadPerSec2;
+    float activeMaxDecelMechanicalRadPerSec2;
+    uint32_t diagnosticFlags;
+    uint32_t tuningResult;
+    uint32_t appliedSequence;
+    uint32_t targetSequence;
+    bool outputValid;
+    bool enabled;
+    bool ownershipActive;
+    bool controlPermitted;
+    bool encoderValid;
+    bool targetArmed;
+    bool atTarget;
+    bool targetClamped;
+    bool speedLimited;
+    bool accelerationLimited;
+    bool applyAccepted;
+} PositionControlStatus;
 
 
 /*==================================================================================================
@@ -139,6 +199,21 @@ tBool             statePWM;       /* Status of the PWM update */
 tBool             fieldWeakOnOff; /* Enable/Disable Field Weakening */
 switchSensor_t    switchSensor;   /* Position sensor selector */
 encoderPospe_t    encoderPospe;   /* Encoder position and speed*/
+
+/* FreeMASTER writes staging and command structures; status is firmware-owned. */
+volatile PositionControlCommandStaged g_positionCommandStaged;
+volatile PositionControlCommand       g_positionCommand;
+volatile PositionControlStatus        g_positionStatus;
+
+static PositionControlState s_positionControl;
+static bool s_positionEncoderSampleValid;
+static bool s_positionOwnershipActive;
+static bool s_positionReleasePending;
+static uint32_t s_positionLastApplySequence;
+static uint32_t s_positionLastEnableSequence;
+static uint32_t s_positionLastDisableSequence;
+static uint32_t s_positionLastSetSoftwareZeroSequence;
+static uint32_t s_positionLastSetTargetSequence;
 
 
 
@@ -179,6 +254,12 @@ tBool FaultDetection(void);
 tBool FocSlowLoop(void);
 void  MCAT_Init(void);
 void CurrentTrigOutput(void);
+static void PositionControl_ApplicationInit(void);
+static bool PositionControl_IsPermitted(void);
+static void PositionControl_ProcessSlowLoop(void);
+static void PositionControl_ReleaseOwnership(void);
+static void PositionControl_MirrorStatus(const PositionControlOutput *output,
+                                         bool controlPermitted);
 
 /*==================================================================================================
 *                                    FUNCTIONS DEFINITION
@@ -362,6 +443,8 @@ int main(void)
     ***********************************************************************************************/
     /* MCAT variables initialization */
     MCAT_Init();
+    /* Default-disabled relative position outer-loop initialization. */
+    PositionControl_ApplicationInit();
     /* Clear measured variables      */
     MEAS_Clear(&meas);
 
@@ -561,6 +644,10 @@ void Bctu_FIFO1_WatermarkNotification(void)
     #if ENCODER
     /* Get rotor position and speed from Encoder sensor */
     POSPE_GetPospeElEnc(&encoderPospe);
+    s_positionEncoderSampleValid = PositionControl_UpdateEncoder(
+        &s_positionControl,
+        encoderPospe.correctedWrappedMechanicalCount,
+        (encoderPospe.correctedWrappedMechanicalCount < (4U * ENC_PULSES)));
     #endif
     /* Fault detection routine, must be executed prior application state machine */
     getFcnStatus &= FaultDetection();
@@ -569,6 +656,10 @@ void Bctu_FIFO1_WatermarkNotification(void)
 
     /* Execute State table with newly measured data */
     StateTable[cntrState.event][cntrState.state]();
+    if (!PositionControl_IsPermitted())
+    {
+        PositionControl_ReleaseOwnership();
+    }
     Siul2_Dio_Ip_ClearPins(TST_GPIO_D16_PORT, (1 << TST_GPIO_D16_PIN));
     FMSTR_Recorder(0);
 }
@@ -771,6 +862,271 @@ void MCAT_Init(void)
     }
 }
 
+static PositionControlCommandStaged PositionControl_CopyStagedCommand(void)
+{
+    PositionControlCommandStaged snapshot;
+
+    snapshot.tuning.kpMechanicalRadPerSecPerCount =
+        g_positionCommandStaged.tuning.kpMechanicalRadPerSecPerCount;
+    snapshot.tuning.kiMechanicalRadPerSecPerCountSec =
+        g_positionCommandStaged.tuning.kiMechanicalRadPerSecPerCountSec;
+    snapshot.tuning.integratorLimitMechanicalRadPerSec =
+        g_positionCommandStaged.tuning.integratorLimitMechanicalRadPerSec;
+    snapshot.tuning.maxMechanicalRadPerSec =
+        g_positionCommandStaged.tuning.maxMechanicalRadPerSec;
+    snapshot.tuning.maxAccelMechanicalRadPerSec2 =
+        g_positionCommandStaged.tuning.maxAccelMechanicalRadPerSec2;
+    snapshot.tuning.maxDecelMechanicalRadPerSec2 =
+        g_positionCommandStaged.tuning.maxDecelMechanicalRadPerSec2;
+    snapshot.tuning.positionToleranceCounts =
+        g_positionCommandStaged.tuning.positionToleranceCounts;
+    snapshot.tuning.stoppedMechanicalRadPerSec =
+        g_positionCommandStaged.tuning.stoppedMechanicalRadPerSec;
+    snapshot.tuning.atTargetDwellSec =
+        g_positionCommandStaged.tuning.atTargetDwellSec;
+    snapshot.tuning.negativeSoftLimitEnabled =
+        g_positionCommandStaged.tuning.negativeSoftLimitEnabled;
+    snapshot.tuning.negativeSoftLimitCounts =
+        g_positionCommandStaged.tuning.negativeSoftLimitCounts;
+    snapshot.tuning.positiveSoftLimitEnabled =
+        g_positionCommandStaged.tuning.positiveSoftLimitEnabled;
+    snapshot.tuning.positiveSoftLimitCounts =
+        g_positionCommandStaged.tuning.positiveSoftLimitCounts;
+    snapshot.targetCounts = g_positionCommandStaged.targetCounts;
+    snapshot.targetDegrees = g_positionCommandStaged.targetDegrees;
+    snapshot.targetUnits = g_positionCommandStaged.targetUnits;
+    return snapshot;
+}
+
+static void PositionControl_ApplicationInit(void)
+{
+    PositionControlConfig config;
+    PositionControlTuning tuning;
+    float safeMechanicalRadPerSec = SPEED_LIM_RAD_BTN / MOTOR_PP;
+    float defaultMechanicalRadPerSec =
+        safeMechanicalRadPerSec * POSITION_DEFAULT_SPEED_FRACTION;
+
+    config.countsPerMechanicalRev = (uint16_t)(4U * ENC_PULSES);
+    config.polePairs = MOTOR_PP;
+    config.encoderDirection = 1;
+    config.encoderSampleSec = POSITION_ENCODER_SAMPLE_SEC;
+    config.positionLoopSampleSec = POSITION_LOOP_SAMPLE_SEC;
+    config.safeMaxMechanicalRadPerSec = safeMechanicalRadPerSec;
+
+    tuning.kpMechanicalRadPerSecPerCount = 0.0F;
+    tuning.kiMechanicalRadPerSecPerCountSec = 0.0F;
+    tuning.integratorLimitMechanicalRadPerSec =
+        defaultMechanicalRadPerSec;
+    tuning.maxMechanicalRadPerSec = defaultMechanicalRadPerSec;
+    tuning.maxAccelMechanicalRadPerSec2 = defaultMechanicalRadPerSec;
+    tuning.maxDecelMechanicalRadPerSec2 = defaultMechanicalRadPerSec;
+    tuning.positionToleranceCounts = 1;
+    tuning.stoppedMechanicalRadPerSec =
+        defaultMechanicalRadPerSec * POSITION_DEFAULT_SPEED_FRACTION;
+    tuning.atTargetDwellSec = POSITION_DEFAULT_DWELL_SEC;
+    tuning.negativeSoftLimitEnabled = false;
+    tuning.negativeSoftLimitCounts = 0;
+    tuning.positiveSoftLimitEnabled = false;
+    tuning.positiveSoftLimitCounts = 0;
+
+    (void)PositionControl_Init(&s_positionControl, &config);
+    (void)PositionControl_ApplyTuning(&s_positionControl, &tuning);
+
+    g_positionCommandStaged.tuning = tuning;
+    g_positionCommandStaged.targetCounts = 0;
+    g_positionCommandStaged.targetDegrees = 0.0F;
+    g_positionCommandStaged.targetUnits = (uint32_t)positionTargetCounts;
+    g_positionCommand.applySequence = 0U;
+    g_positionCommand.enableSequence = 0U;
+    g_positionCommand.disableSequence = 0U;
+    g_positionCommand.setSoftwareZeroSequence = 0U;
+    g_positionCommand.setTargetSequence = 0U;
+
+    s_positionEncoderSampleValid = false;
+    s_positionOwnershipActive = false;
+    s_positionReleasePending = false;
+    s_positionLastApplySequence = 0U;
+    s_positionLastEnableSequence = 0U;
+    s_positionLastDisableSequence = 0U;
+    s_positionLastSetSoftwareZeroSequence = 0U;
+    s_positionLastSetTargetSequence = 0U;
+    g_positionStatus.applyAccepted = true;
+    PositionControl_MirrorStatus(PositionControl_GetOutput(&s_positionControl),
+                                 false);
+}
+
+static bool PositionControl_IsPermitted(void)
+{
+    return (cntrState.state == run) &&
+           (cntrState.usrControl.FOCcontrolMode == speedControl) &&
+           (switchSensor == encoder) &&
+           (pos_mode == encoder1);
+}
+
+static void PositionControl_ReleaseOwnership(void)
+{
+    PositionControl_Disable(&s_positionControl);
+    if (s_positionOwnershipActive)
+    {
+        drvFOC.pospeControl.wRotElReq = 0.0F;
+        s_positionReleasePending = true;
+    }
+    s_positionOwnershipActive = false;
+}
+
+static void PositionControl_MirrorStatus(const PositionControlOutput *output,
+                                         bool controlPermitted)
+{
+    if (output == NULL)
+    {
+        return;
+    }
+
+    g_positionStatus.actualPositionCounts = output->multiTurnPositionCounts;
+    g_positionStatus.actualPositionDegrees = output->multiTurnPositionDegrees;
+    g_positionStatus.targetPositionCounts = output->targetPositionCounts;
+    g_positionStatus.positionErrorCounts = output->positionErrorCounts;
+    g_positionStatus.requestedMechanicalRadPerSec =
+        output->requestedMechanicalRadPerSec;
+    g_positionStatus.limitedMechanicalRadPerSec =
+        output->limitedMechanicalRadPerSec;
+    g_positionStatus.electricalRadPerSec = output->electricalRadPerSec;
+    g_positionStatus.measuredMechanicalRadPerSec =
+        output->measuredMechanicalRadPerSec;
+    g_positionStatus.integratorMechanicalRadPerSec =
+        output->integratorMechanicalRadPerSec;
+    g_positionStatus.activeMaxMechanicalRadPerSec =
+        output->activeMaxMechanicalRadPerSec;
+    g_positionStatus.activeMaxAccelMechanicalRadPerSec2 =
+        output->activeMaxAccelMechanicalRadPerSec2;
+    g_positionStatus.activeMaxDecelMechanicalRadPerSec2 =
+        output->activeMaxDecelMechanicalRadPerSec2;
+    g_positionStatus.diagnosticFlags = output->diagnosticFlags;
+    g_positionStatus.tuningResult = (uint32_t)output->tuningResult;
+    g_positionStatus.outputValid = output->valid;
+    g_positionStatus.enabled = output->enabled;
+    g_positionStatus.ownershipActive = s_positionOwnershipActive;
+    g_positionStatus.controlPermitted = controlPermitted;
+    g_positionStatus.encoderValid = output->encoderValid;
+    g_positionStatus.targetArmed = output->targetArmed;
+    g_positionStatus.atTarget = output->atTarget;
+    g_positionStatus.targetClamped = output->targetClamped;
+    g_positionStatus.speedLimited = output->speedLimited;
+    g_positionStatus.accelerationLimited = output->accelerationLimited;
+}
+
+static void PositionControl_ProcessSlowLoop(void)
+{
+    PositionControlCommandStaged staged;
+    PositionControlInput input;
+    PositionControlOutput positionOutput;
+    uint32_t sequenceBefore;
+    uint32_t sequenceAfter;
+    bool controlPermitted = PositionControl_IsPermitted();
+    bool disableProcessed = false;
+    bool enableProcessed = false;
+    bool ownershipAtStart = s_positionOwnershipActive;
+
+    sequenceBefore = g_positionCommand.disableSequence;
+    if (sequenceBefore != s_positionLastDisableSequence)
+    {
+        s_positionLastDisableSequence = sequenceBefore;
+        PositionControl_ReleaseOwnership();
+        disableProcessed = true;
+    }
+    if (!controlPermitted)
+    {
+        PositionControl_ReleaseOwnership();
+    }
+
+    sequenceBefore = g_positionCommand.applySequence;
+    if (sequenceBefore != s_positionLastApplySequence)
+    {
+        staged = PositionControl_CopyStagedCommand();
+        sequenceAfter = g_positionCommand.applySequence;
+        if (sequenceBefore == sequenceAfter)
+        {
+            s_positionLastApplySequence = sequenceBefore;
+            g_positionStatus.applyAccepted =
+                PositionControl_ApplyTuning(&s_positionControl,
+                                            &staged.tuning);
+            g_positionStatus.appliedSequence = sequenceBefore;
+        }
+    }
+
+    sequenceBefore = g_positionCommand.setSoftwareZeroSequence;
+    if (controlPermitted && !disableProcessed &&
+        (sequenceBefore != s_positionLastSetSoftwareZeroSequence))
+    {
+        s_positionLastSetSoftwareZeroSequence = sequenceBefore;
+        PositionControl_SetSoftwareZero(&s_positionControl);
+    }
+
+    sequenceBefore = g_positionCommand.enableSequence;
+    if (controlPermitted && !disableProcessed &&
+        (sequenceBefore != s_positionLastEnableSequence))
+    {
+        s_positionLastEnableSequence = sequenceBefore;
+        (void)PositionControl_Enable(&s_positionControl, true);
+        enableProcessed = true;
+    }
+
+    sequenceBefore = g_positionCommand.setTargetSequence;
+    if (controlPermitted && !disableProcessed && !enableProcessed &&
+        (sequenceBefore != s_positionLastSetTargetSequence))
+    {
+        staged = PositionControl_CopyStagedCommand();
+        sequenceAfter = g_positionCommand.setTargetSequence;
+        if (sequenceBefore == sequenceAfter)
+        {
+            bool targetAccepted = false;
+            s_positionLastSetTargetSequence = sequenceBefore;
+            if (staged.targetUnits == (uint32_t)positionTargetCounts)
+            {
+                targetAccepted = PositionControl_SetTargetCounts(
+                    &s_positionControl, staged.targetCounts);
+            }
+            else if (staged.targetUnits == (uint32_t)positionTargetDegrees)
+            {
+                targetAccepted = PositionControl_SetTargetDegrees(
+                    &s_positionControl, staged.targetDegrees);
+            }
+            if (targetAccepted)
+            {
+                g_positionStatus.targetSequence = sequenceBefore;
+            }
+        }
+    }
+
+    input.measuredMechanicalRadPerSec = encoderPospe.wRotMec.raw;
+    input.encoderValid = s_positionEncoderSampleValid;
+    input.controlPermitted = controlPermitted;
+    positionOutput = PositionControl_Run(&s_positionControl, &input);
+
+    if (controlPermitted && positionOutput.valid && positionOutput.enabled)
+    {
+        drvFOC.pospeControl.wRotElReq = positionOutput.electricalRadPerSec;
+        s_positionOwnershipActive = true;
+        s_positionReleasePending = false;
+    }
+    else
+    {
+        if (ownershipAtStart || s_positionOwnershipActive)
+        {
+            drvFOC.pospeControl.wRotElReq = 0.0F;
+            s_positionReleasePending = true;
+        }
+        else if (s_positionReleasePending)
+        {
+            /* The preceding slow-loop boundary consumed the zero reference. */
+            s_positionReleasePending = false;
+        }
+        s_positionOwnershipActive = false;
+    }
+
+    PositionControl_MirrorStatus(&positionOutput, controlPermitted);
+}
+
 /*FUNCTION**********************************************************************
  *
  * Function Name : StateFault
@@ -875,6 +1231,9 @@ void StateInit(void)
      * Reset state of Speed control variables
      * ----------------------------------*/
     drvFOC.pospeControl.speedLoopCntr        = 0;
+    PositionControl_ReleaseOwnership();
+    PositionControl_Reset(&s_positionControl);
+    s_positionEncoderSampleValid            = false;
 
     /*------------------------------------
      * Reset state of Align control variables
@@ -976,7 +1335,7 @@ void StateInit(void)
      * ----------------------------------*/
     cntrState.usrControl.controlMode    = automatic;
     pos_mode                            = force;
-    switchSensor                        = sensorless;
+    switchSensor                        = encoder; // Changed from sensorless
 
     if (!InitFcnStatus)
     {
@@ -1113,6 +1472,8 @@ void StateAlign(void)
         /* position range <-pi,pi> is <0,4*ENC_PULSES>  */
         encoderPospe.counterCwOffset  = Emios_Icu_Ip_GetEdgeNumbers(0U, 6U) + (2*ENC_PULSES);
         encoderPospe.counterCcwOffset = Emios_Icu_Ip_GetEdgeNumbers(0U, 7U);
+        PositionControl_Reset(&s_positionControl);
+        s_positionEncoderSampleValid = false;
         #endif
         if (!AlignStatus)
         {
@@ -1271,6 +1632,7 @@ void StateRun(void)
     {
         drvFOC.pospeControl.speedLoopCntr = 0;
 
+        PositionControl_ProcessSlowLoop();
         stateRunStatus = FocSlowLoop();
 
         if (!stateRunStatus)

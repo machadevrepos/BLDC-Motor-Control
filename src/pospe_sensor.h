@@ -60,6 +60,7 @@ typedef struct
     tFloat                              fltMotorPP;
     uint16_t                            counterCwOffset;
     uint16_t                            counterCcwOffset;
+    uint16_t                            correctedWrappedMechanicalCount;
 }encoderPospe_t;
 
 /*==================================================================================================
